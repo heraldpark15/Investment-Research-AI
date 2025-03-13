@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .scraping import scrape_stock_price, scrape_market_cap, scrape_pe_ratio
 from .langgraph_workflow import basic_research_workflow, AgentState
+from .models import StockResearchData
 
 @api_view(['GET'])
 def hello_world(request):
