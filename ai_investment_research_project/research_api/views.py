@@ -1,8 +1,9 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .scraping import scrape_stock_price, scrape_market_cap, scrape_pe_ratio
-from .langgraph_workflow import basic_research_workflow, AgentState
-from .models import StockResearchData
+from .FinanceData.scraping import scrape_stock_price, scrape_market_cap, scrape_pe_ratio
+from .FinanceData.polygon_api import fetch_historical_stock_data_polygon
+from .LangGraph.langgraph_workflow import basic_research_workflow, AgentState
+from datetime import datetime, timedelta
 
 @api_view(['GET'])
 def hello_world(request):
@@ -42,6 +43,25 @@ def get_pe_ratio_view(request):
 @api_view(['GET'])
 def run_basic_research_workflow_view(request):
     ticker = request.GET.get('ticker', 'AAPL')
+    start_date_str = request.query_params.get('start_date')
+    end_date_str = request.query_params.get('end_date')
+
+    # If start_date and end_date are not provided, default to the last 30 days
+    if not start_date_str or not end_date_str:
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=30)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    else:
+        try:
+            datetime.strptime(start_date_str, '%Y-%m-%d')
+            datetime.strptime(end_date_str, '%Y-%m-%d')
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+    historical_data = fetch_historical_stock_data_polygon(ticker, start_date_str, end_date_str)
+    if "error" in historical_data:
+        return Response(historical_data, status=500)
 
     initial_state: AgentState = {
         "ticker_symbol": ticker,
@@ -50,16 +70,44 @@ def run_basic_research_workflow_view(request):
         "pe_ratio": None,
         "summary": None
     }
-    results = basic_research_workflow.invoke(initial_state)
-    final_state = results
 
-    response_data = {
-        "ticker": final_state["ticker_symbol"],
-        "stock_price": final_state["stock_price"],
-        "market_cap": final_state["market_cap"],
-        "pe_ratio": final_state["pe_ratio"],
-        "summary": final_state["summary"],
-    }
+    try:
+        final_state = basic_research_workflow.invoke(initial_state)
 
-    return Response(response_data)
+        response_data = {
+            "ticker": ticker,
+            "stock_price": final_state.get("stock_price") if final_state else None,
+            "market_cap": final_state.get("market_cap") if final_state else None,
+            "pe_ratio": final_state.get("pe_ratio") if final_state else None,
+            "summary": final_state.get("summary"),
+        }
+        return Response(response_data)
 
+    except Exception as e:
+        # Handle any exceptions that might occur during the workflow
+        return Response({"error": f"An error occurred: {str(e)}"}, status=500)
+    
+
+@api_view(['GET'])
+def get_historical_data(request):
+    ticker = request.query_params.get('ticker', 'AAPL')  # Default to AAPL
+    start_date_str = request.query_params.get('start_date')
+    end_date_str = request.query_params.get('end_date')
+
+    # If start_date and end_date are not provided, default to the last 30 days
+    if not start_date_str or not end_date_str:
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=30)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+    else:
+        try:
+            datetime.strptime(start_date_str, '%Y-%m-%d')
+            datetime.strptime(end_date_str, '%Y-%m-%d')
+        except ValueError:
+            return Response({"error": "Invalid date format. Use YYYY-MM-DD."}, status=400)
+
+    historical_data = fetch_historical_stock_data_polygon(ticker, start_date_str, end_date_str)
+    if "error" in historical_data:
+        return Response(historical_data, status=500)
+    return Response({"ticker": ticker, "historical_data": historical_data})
