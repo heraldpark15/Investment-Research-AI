@@ -20,21 +20,24 @@ def web_query(query):
     except Exception as e:
         return f"Error during web query: {e}"
     
+class ToolsManager:
+    def __init__(self):
+        self.stock_data_tool = Tool(
+            name="Stock Data Tool",
+            func=scrape_stock_data,
+            description="Fetches most recent stock price, intraday market capitalization, and PE ratio (TTM) for a given ticker symbol."
+        )
+        self.historical_data_tool = Tool(
+            name="30 Day Stock Price Data Tool",
+            func=fetch_historical_stock_data_polygon,
+            description="Fetches historial stock price data for a given ticker symbol and date range."
+        )
 
-stock_data_tool = Tool(
-    name="Stock Data Tool",
-    func=scrape_stock_data,
-    description="Fetches most recent stock price, intraday market capitalization, and PE ratio (TTM) for a given ticker symbol."
-)
-
-historical_data_tool = Tool(
-    name="30 Day Stock Price Data Tool",
-    func=fetch_historical_stock_data_polygon,
-    description="Fetches historial stock price data for a given ticker symbol and date range."
-)
-
-web_query_tool = Tool(
-    name="Web Query Tool",
-    func=web_query,
-    description="Fetch real-time information from the web given a query."
-)
+        self.web_query_tool = Tool(
+            name="Web Query Tool",
+            func=web_query,
+            description="Fetch real-time information from the web given a query."
+        )
+    
+    def get_tools(self):
+        return [self.stock_data_tool, self.historical_data_tool, self.web_query_tool]    

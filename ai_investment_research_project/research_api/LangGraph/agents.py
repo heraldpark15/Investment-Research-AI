@@ -3,8 +3,11 @@ from langchain.schema.messages import HumanMessage, AIMessage
 from ..FinanceData.scraping import scrape_stock_data
 from typing_extensions import TypedDict
 from ..models import StockResearchData
-from langchain.agents import initialize_agent
 from langgraph.graph import MessagesState
+from .tools import ToolsManager
+
+tools_manager = ToolsManager()
+tools = tools_manager.get_tools()
 
 class AgentState(TypedDict):
     ticker_symbol: str
