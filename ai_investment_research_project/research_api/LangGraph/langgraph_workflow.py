@@ -1,26 +1,22 @@
 from langgraph.graph import StateGraph, END, START
-from .agents import data_retrieval_agent, analysis_agent,decide_next_step, AgentState
+from .agents import get_information, analyze_information, should_gather_information, AgentState
 from IPython.display import Image, display
 
-# Build LangGraph state graph
-workflow = StateGraph(AgentState)
+# Create the LangGraph builder
+builder = StateGraph(AgentState)
 
-# Add nodes (agents)
-workflow.add_node("data_retrieval", data_retrieval_agent)
-workflow.add_node("analysis", analysis_agent)
+# Add nodes
+builder.add_node("gather_information", get_information)
+builder.add_node("analyze", analyze_information)
 
-# Set edges (flow of execution)
-workflow.add_edge(START, "data_retrieval")
-workflow.set_entry_point("data_retrieval")
-workflow.add_conditional_edges( 
-    "data_retrieval",
-    decide_next_step,
-    {
-        "analysis": "analysis",
-        END: END
-    }
+# Add edges
+builder.set_entry_point("gather_information")
+builder.add_conditional_edges(
+    "gather_information",
+    should_gather_information,
+    {"gather_information": "gather_information", "analyze": "analyze"},
 )
-workflow.add_edge("analysis", END)
+builder.add_edge("analyze", END)
 
-# Compile the graph to create the runnable workflow
-basic_research_workflow = workflow.compile()
+# Compile the graph
+investment_research_workflow = builder.compile()

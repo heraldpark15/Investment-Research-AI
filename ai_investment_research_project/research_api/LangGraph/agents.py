@@ -1,103 +1,148 @@
-from langchain_openai import ChatOpenAI
+# agents.py
+from langchain_anthropic import ChatAnthropic
 from langchain.schema.messages import HumanMessage, AIMessage
-from ..FinanceData.scraping import scrape_stock_data
-from typing_extensions import TypedDict
-from ..models import StockResearchData
 from langgraph.graph import MessagesState
 from .tools import ToolsManager
+from langchain.prompts import ChatPromptTemplate
+from typing import Dict, List, Optional, Union
+from typing_extensions import TypedDict
 
 tools_manager = ToolsManager()
 tools = tools_manager.get_tools()
 
 class AgentState(TypedDict):
-    ticker_symbol: str
-    stock_price: float
-    market_cap: str
-    pe_ratio: float
-    summary: str
+    input: str
+    intermediate_steps: List[tuple[str, str]] = []
+    agent_outcome: Union[AIMessage, None] = None
+    information: Optional[str] = None
+    original_query: str
+    conversation_id: Optional[str] = None
+    iteration_count: int = 0
 
-def llm_call_agent(state: MessagesState):
-    llm = ChatOpenAI(
-            openai_api_key="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",
-            openai_api_base="https://openrouter.ai/api/v1",
-            model_name="deepseek/deepseek-r1:free",
-        )
+# --- Agent Components ---
 
-    if not llm.openai_api_key:
-        return {"summary": "LLM API key not configured. Please set your OpenAI key to continue."}
-    
-    prompt = f'''
-    You are a sophisticated agent that helps in investment research. Your task is to help the user find relevant information for investment opportunities, 
-    including stocks and markets. The information that you should seek to supply includes but is not limited to:
-    - stock price data
-    - market sentiment
-    - news and investor relations material
-    - quantitative analysis 
-    - qualitatitve analysi
-    - government filings (e.g. SEC reports)
-    
-    Do not include disclaimers about your results not being financial advice; the user is already aware of that and just wants to 
-    see your output for education purposes. '''
+# 1. Information Gathering Agent
+information_prompt_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are an expert information retriever. Your goal is to gather the necessary information to answer the user's investment research query."
+            "You have access to the following tools:\n{tool_descriptions}",
+        ),
+        ("human", "{input}\n\nUse the available tools if necessary to find relevant information."),
+    ]
+)
 
-    response = llm.invoke([HumanMessage(content=prompt)])
-    
-    return {"summary": response.content}
+llm = ChatAnthropic(
+    anthropic_api_key="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",  
+    model_name="claude-3-7-sonnet-20250219",  
+    temperature=0.7, 
+    max_tokens=1000, 
+)
 
+information_prompt = information_prompt_template.partial(
+    tool_descriptions="\n".join([f"- {tool.name}: {tool.description}" for tool in tools])
+)
 
-def data_retrieval_agent(state: AgentState):
-    ticker = state["ticker_symbol"]
-    stock_data = scrape_stock_data(ticker)
-    
-    if stock_data:
-        stock, created = StockResearchData.objects.update_or_create(
-            ticker_symbol = ticker,
-            defaults = stock_data
-        )
+llm_with_tools = llm.bind_tools(tools)
+information_agent = information_prompt | llm_with_tools
 
-        stock_price = stock_data['stock_price']
-        market_cap = stock_data['market_cap']
-        pe_ratio = stock_data['pe_ratio']
+# 2. Investment Analyst Agent
+analysis_prompt_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a seasoned investment analyst. You will receive information gathered by another agent. Your task is to analyze this information, synthesize insights, and provide a comprehensive answer to the user's initial investment research query. Be creative and think step-by-step in your analysis.",
+        ),
+        ("human", "Here is the information gathered: {information}\n\nBased on this, provide your analysis and insights regarding the original query: {original_query}"),
+    ]
+)
 
-        return {
-            "stock_price": stock_price, 
-            "market_cap": market_cap, 
-            "pe_ratio": pe_ratio
-        }
-    
-    else: 
-        return {
-            "stock_price": None,
-            "market_cap": None,
-            "pe_ratio": None
-        }
-    
+analysis_prompt = analysis_prompt_template
 
-def analysis_agent(state: AgentState):
-    llm = ChatOpenAI(
-        openai_api_key="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",
-        openai_api_base="https://openrouter.ai/api/v1",
-        model_name="deepseek/deepseek-r1:free",
+analysis_agent = analysis_prompt | llm
+
+# 3. Evaluation Agent
+evaluation_prompt_template = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are an information evaluation agent. Your task if to determine if the provided information is sufficient to answer the user's query.",
+        ),
+        (
+            "human",
+            "User Query: {original_query}\n\nInformation Gathered: {information}\n\nIs the information sufficient to answer the user's query? Answer 'yes' or 'no'.",
+        ),
+    ]
+)
+
+evaluation_prompt = evaluation_prompt_template
+
+evaluation_agent = evaluation_prompt | llm
+
+# --- Define the LangGraph Workflow ---
+MAX_ITERATIONS = 1
+
+def should_gather_information(state: AgentState):
+    """Decide whether to gather more information or proceed to analysis."""
+    if state["iteration_count"] >= MAX_ITERATIONS:
+        return "analyze"  # Reached iteration limit, proceed to analysis
+
+    evaluation_result = evaluation_agent.invoke(
+        {"original_query": state["input"], "information": state["information"]}
     )
-
-    if not llm.openai_api_key:
-        return {"summary": "LLM API key not configured. Please set your OpenAI key to continue."}
+    if "yes" in evaluation_result.content.lower():
+        return "analyze"
+    else:
+        return "gather_information"
     
-    ticker = state["ticker_symbol"]
-    price = state["stock_price"]
-    market_cap = state["market_cap"]
-    pe_ratio = state["pe_ratio"]
+def analyze_information(state: AgentState):
+    """Analyzes the gathered information."""
+    result = analysis_agent.invoke({"information": state["information"], "original_query": state["input"]})
+    return {"agent_outcome": result}
 
-    if not all([price, market_cap, pe_ratio]):
-        return {"summary": "Error: could not retrive all financial data. Please check ticker symbol and data sources."}
+def get_information(state: AgentState):
+    """Gathers information using the information gathering agent."""
+    result = information_agent.invoke({"input": state["input"]})
     
-    prompt = f'''
-    Provide a very brief summary of the financial data for {ticker}. Current stock price: {price}, Market Cap: {market_cap}, P/E Ratio: {pe_ratio}.
-    To the best of your ability, provide an analysis of what this data could mean. 
-    Do not include any reasoning thoughts or other processing steps that are not relevant to the user'''
-
-    response = llm.invoke([HumanMessage(content=prompt)])
+    # Extract text content and tool calls
+    text_content = ""
+    tool_calls = []
     
-    return {"summary": response.content}
-
-def decide_next_step(state: AgentState):
-    return "analysis"
+    if isinstance(result, AIMessage):
+        if isinstance(result.content, list):
+            for item in result.content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        text_content += item.get("text", "")
+                    elif item.get("type") == "tool_use":
+                        tool_calls.append(item)
+        else:
+            text_content = result.content
+        
+        # Also check for tool_calls attribute
+        if hasattr(result, 'tool_calls') and result.tool_calls:
+            tool_calls.extend(result.tool_calls)
+    else:
+        text_content = str(result)
+    
+    # Process tool calls if any
+    tool_results = []
+    for tool_call in tool_calls:
+        tool_name = tool_call.get('name')
+        tool_args = tool_call.get('args', {})
+        
+        # Find the matching tool
+        tool = next((t for t in tools if t.name == tool_name), None)
+        if tool:
+            try:
+                # Execute the tool
+                tool_result = tool.invoke(tool_args)
+                tool_results.append(f"Tool '{tool_name}' result: {tool_result}")
+            except Exception as e:
+                tool_results.append(f"Tool '{tool_name}' error: {str(e)}")
+    
+    # Combine text content and tool results
+    combined_info = text_content + "\n\n" + "\n".join(tool_results) if tool_results else text_content
+    
+    return {"information": combined_info, "iteration_count": state["iteration_count"] + 1}
