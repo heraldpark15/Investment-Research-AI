@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def fetch_historical_stock_data_polygon(ticker_symbol, start_date, end_date):
-    """Fetches historical daily OHLCV data for a given ticker from Polygon API."""
+def fetch_stock_data_polygon(ticker_symbol: str, start_date: str, end_date: str):
+    """Fetches daily OHLCV data for a given ticker from Polygon API."""
     api_key = os.environ.get("POLYGON_API_KEY")  
     if not api_key:
         return {"error": "Polygon API key not found. Please set the POLYGON_API_KEY environment variable."}
