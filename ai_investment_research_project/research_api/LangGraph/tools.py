@@ -2,13 +2,17 @@ from langchain_core.tools import Tool, StructuredTool
 from ..FinanceData.polygon_api import fetch_stock_data_polygon
 from ..FinanceData.scraping import scrape_stock_data
 from tavily import TavilyClient
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def web_query(query):
     query = query.strip('"')
     
     try:
-        client = TavilyClient(api_key="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")
+        client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
 
         response = client.search(
             query=query,
