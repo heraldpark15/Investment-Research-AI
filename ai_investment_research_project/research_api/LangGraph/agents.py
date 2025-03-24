@@ -1,4 +1,3 @@
-# agents.py
 from langchain_anthropic import ChatAnthropic
 from langchain.schema.messages import AIMessage
 from .tools import ToolsManager
@@ -6,6 +5,10 @@ from langchain.prompts import ChatPromptTemplate
 from typing import List, Optional, Union
 from typing_extensions import TypedDict
 import datetime
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 tools_manager = ToolsManager()
 tools = tools_manager.get_tools()
@@ -26,7 +29,7 @@ class AgentState(TypedDict):
 current_date = datetime.date.today().isoformat()
 
 llm = ChatAnthropic(
-    anthropic_api_key="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",  
+    anthropic_api_key= os.environ.get("ANTHROPIC_API_KEY"),
     model_name="claude-3-7-sonnet-20250219",  
     temperature=0.7, 
     max_tokens=500, 
@@ -38,19 +41,17 @@ validation_prompt_template = ChatPromptTemplate.from_messages(
             "system",
             "You are a strict input validation agent for an investment research system. Your task is to determine whether the user's input is a valid investment research query. "
             "If the input is too vague, irrelevant, or off-topic, you must respond with an explanation and request a more specific query. "
-            "If the input is valid, simply respond with 'valid'.\n\n"
+            "If the input is valid, simply respond with 'valid'.\n"
             "Examples:\n"
             "- Input: 'Tell me a joke' → Response: 'Your query is not related to investment research. Please ask about a company, sector, or trend you want to analyze.'\n"
-            "- Input: 'Best tech stocks?' → Response: 'Your query is too broad. Please specify a company, industry, or investment strategy.'\n"
-            "- Input: 'Is Tesla a good investment in 2025?' → Response: 'valid'\n\n"
-            "Current Date: 3/18/2025. You MUST use the provided current date above. Do NOT rely on any other date information."
+            "- Input: 'Is Tesla a good investment in 2025?' → Response: 'valid'\n"
+            f"Current Date: {current_date}. You MUST use the provided current date above. Do NOT rely on any other date information."
             "If chat history is avaible, use it as context for the current input."
         ),
         ("human", "User Query: {input}, Chat History: {chat_history}"),
     ]
 )
 
-validation_prompt = validation_prompt_template
 validation_agent = validation_prompt_template | llm
 
 # 2. Information Gathering Agent
@@ -60,7 +61,7 @@ information_prompt_template = ChatPromptTemplate.from_messages(
             "system",
             "You are an expert information retriever. Your goal is to gather the necessary information to answer the user's investment research query."
             "You have access to the following tools:\n{tool_descriptions}"
-            "Current Date: 3/18/2025. You MUST use the provided current date above. Do NOT rely on any other date information."
+            f"Current Date: {current_date}. You MUST use the provided current date above. Do NOT rely on any other date information."
             "If chat history is avaible, use it as context for the current input."
         ),
         ("human", "{input}\n\nUse the available tools if necessary to find relevant information. Chat history: {chat_history}"),
@@ -81,7 +82,7 @@ analysis_prompt_template = ChatPromptTemplate.from_messages(
         (
             "system",
             "You are a seasoned investment analyst. You will receive information gathered by another agent. Your task is to analyze this information, synthesize insights, and provide a comprehensive answer to the user's initial investment research query. Be creative and think step-by-step in your analysis."
-            "Current Date: 3/18/2025. You MUST use the provided current date above. Do NOT rely on any other date information."
+            f"Current Date: {current_date}. You MUST use the provided current date above. Do NOT rely on any other date information."
             "If chat history is avaible, use it as context for the current input."
         ),
         ("human", "Here is the information gathered: {information}\n\nBased on this, provide your analysis and insights regarding the original query: {original_query}. Chat history: {chat_history}"),
@@ -98,7 +99,7 @@ evaluation_prompt_template = ChatPromptTemplate.from_messages(
         (
             "system",
             "You are an information evaluation agent. Your task if to determine if the provided information is sufficient to answer the user's query."
-            "Current Date: 3/18/2025. You MUST use the provided current date above. Do NOT rely on any other date information."
+            f"Current Date: {current_date}. You MUST use the provided current date above. Do NOT rely on any other date information."
             "If chat history is avaible, use it as context for the current input."
         ),
         (
@@ -122,7 +123,7 @@ next_steps_prompt_template = ChatPromptTemplate.from_messages(
             "Make sure the suggestions are actionable and relevant to the original query."
             "Return an array with each question as an element in the array. No other information is necessary"
             "Each question should be in markdown form so that it can be clearly rendered using React Markdown"
-            "Current Date: 3/18/2025. You MUST use the provided current date above. Do NOT rely on any other date information."
+            f"Current Date: {current_date}. You MUST use the provided current date above. Do NOT rely on any other date information."
             "If chat history is avaible, use it as context for the current input."
         ),
         (
