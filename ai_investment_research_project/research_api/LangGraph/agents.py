@@ -142,21 +142,63 @@ MAX_ITERATIONS = 1
 WINDOW_SIZE = 3
 
 def validate_input(state: AgentState):
-    print("VS")
-    print(type(state["chat_history"]))
-    result = validation_agent.invoke({"input": state["input"], "chat_history": state["chat_history"]})
+    try:
+        print("Validation Input State:")
+        print(f"Input: {state['input']}")
+        print(f"Chat History (type): {type(state['chat_history'])}")
+        print(f"Chat History (content): {state['chat_history']}")
+        
+        # Format chat history into a string
+        formatted_chat_history = "\n".join(state["chat_history"]) if state["chat_history"] else "No previous chat history"
+        
+        print(f"Formatted Chat History: {formatted_chat_history}")
+        
+        # Create validation input with proper error handling
+        validation_input = {
+            "input": str(state["input"]).strip(),  # Ensure input is a string and stripped
+            "chat_history": formatted_chat_history
+        }
+        
+        print("Calling validation agent with input:", validation_input)
+        
+        result = validation_agent.invoke(validation_input)
+        
+        print("Validation result:", result)
+        print("Validation result content:", result.content)
 
-    if result.content.lower() != 'valid':
-        print("Not valid")
-        new_history = state["chat_history"] + [f"User: {state['input']}", f"Bot: {result.content}"]
+        if result.content.lower().strip() != 'valid':
+            print("Not valid")
+            new_history = state["chat_history"] + [
+                f"User: {state['input']}", 
+                f"Bot: {result.content}"
+            ]
 
-        if len(new_history) > WINDOW_SIZE * 2: #2 messages per turn.
-            new_history = new_history[-WINDOW_SIZE * 2:]
-        return {"agent_outcome": result, "is_valid": False, "chat_history": new_history} 
-    else:
-        print("IS valid")
-        return {"is_valid": True} 
-    
+            if len(new_history) > WINDOW_SIZE * 2:
+                new_history = new_history[-WINDOW_SIZE * 2:]
+            return {
+                "agent_outcome": result, 
+                "is_valid": False, 
+                "chat_history": new_history
+            } 
+        else:
+            print("IS valid")
+            return {"is_valid": True}
+            
+    except Exception as e:
+        print(f"Error in validate_input: {str(e)}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        # Return a graceful error state
+        return {
+            "is_valid": False,
+            "agent_outcome": AIMessage(content=f"An error occurred during validation: {str(e)}"),
+            "chat_history": state.get("chat_history", []) + [
+                f"User: {state.get('input', '')}",
+                "Bot: I encountered an error while processing your request. Please try again."
+            ]
+        }
+
 def is_valid_input(state: AgentState):
     if state["is_valid"]: 
         return "valid"
@@ -178,18 +220,29 @@ def should_gather_information(state: AgentState):
     
 def analyze_information(state: AgentState):
     print("Analyze info")
-    result = analysis_agent.invoke({"information": state["information"], "original_query": state["input"], "chat_history": state["chat_history"]})
+    formatted_chat_history = "\n".join(state["chat_history"]) if state["chat_history"] else ""
+    
+    result = analysis_agent.invoke({
+        "information": state["information"], 
+        "original_query": state["input"], 
+        "chat_history": formatted_chat_history
+    })
     
     new_history = state["chat_history"] + [f"Bot: {result.content}"]
 
-    if len(new_history) > WINDOW_SIZE * 2: #2 messages per turn.
+    if len(new_history) > WINDOW_SIZE * 2:
         new_history = new_history[-WINDOW_SIZE * 2:]
 
     return {"agent_outcome": result, "chat_history": new_history}
 
 def get_information(state: AgentState):
     print("Get information")
-    result = information_agent.invoke({"input": state["input"], "chat_history": state["chat_history"]})
+    formatted_chat_history = "\n".join(state["chat_history"]) if state["chat_history"] else ""
+    
+    result = information_agent.invoke({
+        "input": state["input"], 
+        "chat_history": formatted_chat_history
+    })
     
     # Extract text content and tool calls
     text_content = ""
@@ -235,8 +288,11 @@ def get_information(state: AgentState):
 
 def suggest_next_steps(state: AgentState):
     print("Suggest next steps")
-    result = next_steps_agent.invoke(
-        {"original_query": state["input"], "analysis_result": state["agent_outcome"].content, "chat_history": state["chat_history"]}
-    )
-    print(type(result.content))
-    return ({"next_steps": result.content})
+    formatted_chat_history = "\n".join(state["chat_history"]) if state["chat_history"] else ""
+    
+    result = next_steps_agent.invoke({
+        "original_query": state["input"], 
+        "analysis_result": state["agent_outcome"].content, 
+        "chat_history": formatted_chat_history
+    })
+    return {"next_steps": result.content}

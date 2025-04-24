@@ -1,6 +1,6 @@
 # research_api/scraping.py
 from polygon import RESTClient
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 
